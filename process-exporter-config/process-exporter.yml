@@ -1,0 +1,18 @@
+process_names:
+  - name: "spark-master"
+    cmdline:
+      - "org.apache.spark.deploy.master.Master"
+
+  - name: "spark-worker"
+    cmdline:
+      - "org.apache.spark.deploy.worker.Worker"
+
+  - name: "myspark-runner"
+    cmdline:
+      - "runner.py"
+
+  - name: "{{.Comm}}"
+    comm:
+      - java
+      - python3
+      - python

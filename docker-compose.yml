@@ -1,0 +1,115 @@
+services:
+  spark-master:
+    image: apache/spark:4.0.1
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    environment:
+      - SPARK_MASTER_HOST=spark-master
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+    networks:
+      - sparkNetwork
+    volumes:
+      - ./data:/data
+
+  spark-worker:
+    image: apache/spark:4.0.1
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    depends_on:
+      - spark-master
+    networks:
+      - sparkNetwork
+    volumes:
+      - ./data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 5G
+        reservations:
+          cpus: '3.0'
+          memory: 3G
+
+  myspark:
+      container_name: myspark
+      build: .              
+      networks:
+        - sparkNetwork    
+      volumes:
+        - ./data:/data
+        - ./runner.py:/app/runner.py
+      depends_on:
+        - spark-master
+      restart: on-failure
+
+  cadvisor:
+      image: gcr.io/cadvisor/cadvisor:latest
+      container_name: cadvisor
+      privileged: true                         
+      ports:
+        - "8090:8080"                       
+      volumes:
+        - /:/rootfs:ro
+        - /var/run:/var/run:ro
+        - /sys:/sys:ro
+        - /var/lib/docker/:/var/lib/docker:ro
+        - /dev/disk/:/dev/disk:ro
+      devices:
+        - /dev/kmsg
+      networks:
+        - sparkNetwork
+      restart: unless-stopped
+
+  process-exporter:
+      image: ncabatoff/process-exporter:latest
+      container_name: process-exporter
+      privileged: true
+      ports:
+        - "9256:9256"
+      volumes:
+        - /proc:/host/proc:ro              
+        - ./process-exporter-config:/config:ro
+      command:
+        - "--procfs=/host/proc"
+        - "--config.path=/config/process-exporter.yml"
+      networks:
+        - sparkNetwork
+      restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+    networks:
+      - sparkNetwork
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin   # change this
+    depends_on:
+      - prometheus
+    networks:
+      - sparkNetwork
+    restart: unless-stopped
+
+networks:
+  sparkNetwork:
+    external: true
+
+volumes:
+  prometheus_data:
+  grafana_data:
